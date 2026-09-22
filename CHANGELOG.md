@@ -3,6 +3,13 @@
 What changed in each skram-tunnel release, for someone running the binary.
 Versions follow semver.
 
+## [0.2.1] — 2026-09-21
+
+- `skram-tunnel --help` opens with the same sentence as the README: shares a
+  local app and the identity provider in front of it on one public URL, so a
+  reviewer on a phone can get past the login page. The usage guide follows it,
+  unchanged.
+
 ## [0.2.0] — 2026-09-21
 
 First public release.

@@ -1,7 +1,7 @@
 # Skram Tunnel
 
-Shares a local app **and the identity provider in front of it** on one public
-URL, so a reviewer can open it — and log in — from a phone.
+Shares a local app and the identity provider in front of it on one public URL,
+so a reviewer on a phone can get past the login page.
 
 Any tunnel can put `localhost:3000` on the internet. Login is what breaks: the
 OIDC issuer, the redirect URIs, the cookies and the URLs baked into the app's
