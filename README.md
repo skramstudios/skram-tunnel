@@ -20,6 +20,11 @@ skram-tunnel status
 skram-tunnel verify                        # walk the login, report every hop
 skram-tunnel stop
 skram-tunnel doctor                        # validate config + prerequisites
+
+skram-tunnel 3000 --json                   # one object on stdout: public_url, access_code, owner, ...
+skram-tunnel myapp --replace               # take over a tunnel someone else owns
+skram-tunnel mcp                           # serve start/status/stop/verify over MCP
+skram-tunnel agent install-rules           # write the agent-rules section for each target's repos
 ```
 
 ## Install
@@ -99,6 +104,76 @@ chosen on the command line replaces the target's whole choice, so
 
 Secrets stay out of this file: tokens come from the environment, from the
 provider's own config, or from a `token_file`.
+
+`SKRAM_TUNNEL_PROJECT` overrides the compose project name (default
+`skram-tunnel`), and every container name with it (`<project>-traefik`,
+`<project>-ngrok`, `<project>-cloudflared`), so a second, isolated tunnel
+stack can run beside the default one without colliding on containers or
+networks.
+
+## For agents
+
+Every command takes `--json`: one object on stdout and nothing else there
+(`start`'s progress, compose output and banner move to stderr, and the QR
+code is skipped). `status --json` names who owns the running tunnel;
+`stop` and `verify` follow the same shape.
+
+There is one tunnel at a time. `start` refuses to take over a tunnel
+someone else owns — the refusal names the owner (actor, workspace,
+session, target, since when) and exits non-zero. `--replace` is the
+explicit takeover: it also revokes that owner's shared link, since the
+access code is new on every start. Restarting or reconfiguring your own
+tunnel needs no `--replace`.
+
+```bash
+skram-tunnel mcp
+```
+
+Runs an MCP server on stdio with four tools, built on the same reports as
+`--json`: `tunnel_start` (`replace: true` is `--replace`), `tunnel_status`,
+`tunnel_stop`, `tunnel_verify`. Its instructions list the configured
+targets. Register it once, for every project, at Claude Code's user
+scope:
+
+```bash
+claude mcp add --scope user skram-tunnel -- skram-tunnel mcp
+```
+
+`skram-tunnel doctor` reports whether that registration exists and matches.
+
+### Agent rules for a checkout
+
+A target's `repos:` list names entries in the top-level `repos:` block
+(the same block skram and skram-vault read); a checkout of one of those
+repos gets that target written into its agent rules.
+
+```yaml
+repos:
+  my-app:
+    remote: my-org/my-app            # owner/name or any git URL
+    paths: [~/Dev/my-app]            # checkouts on this machine (~ and globs)
+
+tunnel:
+  targets:
+    myapp:
+      app: http://localhost:44324
+      repos: [my-app]
+```
+
+```bash
+skram-tunnel agent install-rules            # every checkout a target names
+skram-tunnel agent install-rules --here     # only the checkout you're standing in
+skram-tunnel agent install-rules --repos my-app,other-repo
+skram-tunnel agent install-rules --check    # report drift, write nothing, exit 1 on any
+```
+
+Writes machine-local files only, never anything you would commit: a
+"## Sharing a local app (skram-tunnel)" section in `AGENTS.local.md` (the
+start/status/verify/stop loop, the one-owner rule, and a table of that
+checkout's targets), the `@AGENTS.local.md` line in `CLAUDE.local.md`, and
+both listed in `.git/info/exclude`. `AGENTS.local.md` may already carry a
+section written by skram or skram-vault; each tool only ever reads or
+replaces its own section, so all three can run in either order.
 
 ## When you do not need this
 

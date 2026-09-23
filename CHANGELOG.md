@@ -3,6 +3,30 @@
 What changed in each skram-tunnel release, for someone running the binary.
 Versions follow semver.
 
+## [0.3.0] — 2026-09-22
+
+- One owner per tunnel: `start` refuses to come up over a tunnel someone else
+  started, and names them. `--replace` takes it over, which also revokes their
+  shared link. Restarting your own tunnel is never refused, and a tunnel whose
+  stack has died never blocks anyone.
+- `--json` on `start`, `stop`, `status` and `verify`: exactly one JSON object
+  on stdout, progress on stderr, and a non-zero exit on a refusal, a failed
+  start or a failed verify. `status --json` now puts its fields at the top
+  level instead of under `session`.
+- `skram-tunnel mcp`: an MCP server on stdio with `tunnel_start`,
+  `tunnel_status`, `tunnel_verify` and `tunnel_stop`, returning the same
+  reports as `--json`. Register it with
+  `claude mcp add --scope user skram-tunnel -- skram-tunnel mcp`; `doctor`
+  checks the registration.
+- `skram-tunnel agent install-rules` writes a "Sharing a local app" section
+  into each checkout a target names (`repos:`), in machine-local files only.
+- `SKRAM_TUNNEL_PROJECT` names the compose project (default `skram-tunnel`),
+  so a second, isolated tunnel stack can run beside the default one.
+- Fixed: `verify` on a Keycloak tunnel now finds the realm's discovery and
+  login page instead of reporting 404s.
+- Fixed: a tunnel on `--public-url` could come up serving 404 for every
+  request when Traefik missed its first config write.
+
 ## [0.2.1] — 2026-09-21
 
 - `skram-tunnel --help` opens with the same sentence as the README: shares a
