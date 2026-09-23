@@ -3,6 +3,15 @@
 What changed in each skram-tunnel release, for someone running the binary.
 Versions follow semver.
 
+## [Unreleased]
+
+## [0.3.1] — 2026-09-23
+
+- Fixed: `agent install-rules` and `doctor` missed a repo's linked worktrees
+  (a second checkout of the same clone) — no "Sharing a local app" section,
+  no `doctor` warning either. Both now cover every linked worktree of a
+  checkout a tunnel target names.
+
 ## [0.3.0] — 2026-09-22
 
 - One owner per tunnel: `start` refuses to come up over a tunnel someone else
