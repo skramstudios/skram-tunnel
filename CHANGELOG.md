@@ -5,6 +5,40 @@ Versions follow semver.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-27
+
+- Owned paths: a login that spans several hosts (an app, a login broker, an
+  identity provider) completes on one public origin. `--path <name>=<path>`
+  (repeatable; `paths` in `tunnel_start`; `upstreams: {name: {url, paths}}`
+  in config) serves an extra upstream at those paths unchanged instead of
+  under `/__<name>`. Redirects, form bodies and cookie domains are mapped
+  between the public origin and whichever upstream owns the path.
+- `verify` probes like a phone's browser and tells you what to do next. It
+  follows redirects through a login broker to the identity provider, flags a
+  redirect or an API call to a host the tunnel doesn't route, and flags an
+  owned path the app also serves. Its report gains `warnings` and `next`:
+  the exact flags (or `tunnel_start` fields) that fix what it found.
+- `skram-tunnel logs [traefik|provider] [--tail N]` and the MCP `tunnel_logs`
+  tool print the running stack's logs. `status` also reports the state
+  directory and container names.
+- MCP `tunnel_start` takes every `start` flag as a field, and its report
+  (and `start --json`) gains `share_url`, `routing` and `config`: a
+  paste-ready config snippet that reproduces the start.
+- `tunnel_start` and `tunnel_status` gain `qr`, the share link as a
+  scannable text QR code, and `warnings`, which say when the binary was
+  replaced after the MCP server started so you know to reconnect it.
+- `--help`, the MCP instructions and the install-rules section describe the
+  debug loop and when a link is ready to hand over. The README gains a
+  walkthrough for a login that spans several hosts.
+- Fixed: an upstream on a hosts-file alias for 127.0.0.1 (e.g.
+  `app.localhost`) is reachable through the tunnel, and `start` refuses a
+  host that doesn't resolve instead of coming up broken.
+- Fixed: Traefik picks up every config rewrite, and no longer logs a
+  spurious error at startup.
+- Fixed: `verify` gets past ngrok's free-tier browser-warning page, and
+  trusts a self-signed local app the way the tunnel itself does.
+- Fixed: the MCP server now picks up config edits made after it started.
+
 ## [0.3.1] — 2026-09-23
 
 - Fixed: `agent install-rules` and `doctor` missed a repo's linked worktrees

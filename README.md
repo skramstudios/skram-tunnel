@@ -17,13 +17,14 @@ skram-tunnel http://localhost:44324 \
 skram-tunnel myapp                         # a target named in tunnel.targets
 skram-tunnel 3000 --provider cloudflared   # pick the transport
 skram-tunnel status
-skram-tunnel verify                        # walk the login, report every hop
+skram-tunnel verify                        # walk the login, report every hop and what to fix next
+skram-tunnel logs traefik                  # the proxy's own log (or: logs provider)
 skram-tunnel stop
 skram-tunnel doctor                        # validate config + prerequisites
 
 skram-tunnel 3000 --json                   # one object on stdout: public_url, access_code, owner, ...
 skram-tunnel myapp --replace               # take over a tunnel someone else owns
-skram-tunnel mcp                           # serve start/status/stop/verify over MCP
+skram-tunnel mcp                           # serve start/status/stop/verify/logs over MCP
 skram-tunnel agent install-rules           # write the agent-rules section for each target's repos
 ```
 
@@ -85,7 +86,10 @@ tunnel:
       idp: http://localhost:48080
       oidc: zitadel
       upstreams:
-        data: http://localhost:43134
+        data: http://localhost:43134    # a bare URL is mounted at /__data
+        login:                          # an object may own paths instead
+          url: http://localhost:43135
+          paths: [/oauth]
     staging:
       app: "3000"
       provider: tailscale:serve    # overrides tunnel.provider
@@ -111,12 +115,91 @@ provider's own config, or from a `token_file`.
 stack can run beside the default one without colliding on containers or
 networks.
 
+## A login that spans several hosts
+
+Some logins hop across hosts: the app sends the browser to a login broker,
+the broker to Keycloak, and back. Say the stack answers on three hosts-file
+aliases:
+
+```text
+# /etc/hosts
+127.0.0.1  app.example.test login.example.test auth.example.test
+```
+
+- `app.example.test`: the app.
+- `login.example.test`: a login broker whose redirects expect it at `/oauth`.
+- `auth.example.test`: Keycloak, the identity provider.
+
+The aliases need nothing extra. `start` resolves every upstream host on this
+machine; a name that resolves to loopback is reached under its own name from
+inside Traefik's container, so Host, SNI and certificate checks still match.
+A name that does not resolve refuses the start, naming it.
+
+The app owns `/` and Keycloak its profile's paths. Give the broker the paths
+its redirects use, and it answers at them unchanged instead of under
+`/__login`:
+
+```bash
+skram-tunnel http://app.example.test \
+    --oidc keycloak --idp http://auth.example.test \
+    --upstream login=http://login.example.test --path login=/oauth
+```
+
+In config, the broker is an upstream object with `paths`:
+
+```yaml
+tunnel:
+  targets:
+    app:
+      app: http://app.example.test
+      idp: http://auth.example.test
+      oidc: keycloak
+      upstreams:
+        login:
+          url: http://login.example.test
+          paths: [/oauth]
+```
+
+You do not need to know the topology up front. Start with the app and
+Keycloak, and `verify` names the missing hop:
+
+```text
+$ skram-tunnel http://app.example.test --oidc keycloak --idp http://auth.example.test
+$ skram-tunnel verify
+  FAIL home: redirected off the public origin to http://login.example.test/oauth/… — http://login.example.test is not routed by this tunnel
+
+  Next:
+  - http://login.example.test is redirected to at /oauth but not routed — add it as an extra upstream owning /oauth.
+      --upstream login=http://login.example.test --path login=/oauth
+```
+
+Add the flags, start again, verify again. Over MCP, the same `next` entry
+carries `tunnel_start` fields (`upstreams` and `paths`) to merge into the
+last call. Once `verify` passes, the start report's `config` is the target
+above, ready to paste. When a hop fails with no `next`, `skram-tunnel logs
+traefik` shows what the proxy saw.
+
+Some apps serve the broker's path too: an API gateway that answers `/oauth`
+on the app host and the broker host alike, picking its role from Host. Once
+the broker owns `/oauth`, the app's own `/oauth/…` redirects reach the broker,
+and the login loops after sign-in. Add the path as a collapse path
+(`--collapse-path /oauth`, or `collapse_paths: [/oauth]` in the target): the
+app's copy is served at `/__app/oauth`, which `routing` then lists. `verify`
+asks the app for each owned path directly and, when the app answers, warns
+with that `next`.
+
 ## For agents
 
 Every command takes `--json`: one object on stdout and nothing else there
 (`start`'s progress, compose output and banner move to stderr, and the QR
 code is skipped). `status --json` names who owns the running tunnel;
 `stop` and `verify` follow the same shape.
+
+When `verify` fails, its `next` entries carry the fix for each unrouted
+host: the CLI `flags` and the matching `tunnel_start` fields. Apply them,
+start again, and verify again. `skram-tunnel logs [traefik|provider]`
+prints the containers' logs; `status` names the state directory and the
+containers, and `docker logs <project>-traefik` is the fallback.
 
 There is one tunnel at a time. `start` refuses to take over a tunnel
 someone else owns — the refusal names the owner (actor, workspace,
@@ -129,11 +212,22 @@ tunnel needs no `--replace`.
 skram-tunnel mcp
 ```
 
-Runs an MCP server on stdio with four tools, built on the same reports as
+Runs an MCP server on stdio with five tools, built on the same reports as
 `--json`: `tunnel_start` (`replace: true` is `--replace`), `tunnel_status`,
-`tunnel_stop`, `tunnel_verify`. Its instructions list the configured
-targets. Register it once, for every project, at Claude Code's user
-scope:
+`tunnel_stop`, `tunnel_verify`, `tunnel_logs`. Its instructions list the
+configured targets and the verify → `next` → restart loop. `tunnel_start`
+takes a field for every start flag (`idp`, `oidc`, `upstreams`, `paths`,
+`collapse_paths`, …), so an agent can try out a topology
+without writing config. Its report, like `start --json`'s, carries
+`share_url`, `routing` (which upstream answers which path), `config`:
+the `tunnel.targets.<name>` YAML that reproduces the start, to paste into
+your config, and `qr` (`tunnel_status` too, only while running): the share
+URL as a terminal QR code, for the agent to paste into chat as a code
+block when a human wants to scan it. The tool never writes config itself.
+The server reads config on every call, and its start and status results
+warn when the binary on disk was replaced after it started: reconnect it
+(`/mcp`) to run the new build. Register it once, for every project, at
+Claude Code's user scope:
 
 ```bash
 claude mcp add --scope user skram-tunnel -- skram-tunnel mcp
@@ -169,7 +263,8 @@ skram-tunnel agent install-rules --check    # report drift, write nothing, exit 
 
 Writes machine-local files only, never anything you would commit: a
 "## Sharing a local app (skram-tunnel)" section in `AGENTS.local.md` (the
-start/status/verify/stop loop, the one-owner rule, and a table of that
+start/status/verify/logs/stop loop, what to do when verify fails, the
+one-owner rule, and a table of that
 checkout's targets), the `@AGENTS.local.md` line in `CLAUDE.local.md`, and
 both listed in `.git/info/exclude`. `AGENTS.local.md` may already carry a
 section written by skram or skram-vault; each tool only ever reads or
